@@ -1,0 +1,4 @@
+InputImageFolder
+OutputImageFolder
+*.pyc
+.idea
