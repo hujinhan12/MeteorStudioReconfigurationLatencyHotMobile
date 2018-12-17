@@ -15,7 +15,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Example of a call to a native method
         if (null == savedInstanceState) {
-            getFragmentManager().beginTransaction()
+            getSupportFragmentManager().beginTransaction()
                     .replace(R.id.container, Camera2RawFragment.newInstance())
                     .commit();
         }
