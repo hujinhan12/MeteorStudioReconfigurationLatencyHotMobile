@@ -318,6 +318,8 @@ Java_com_msrs_pose_1estimation_NativeCallMethods_generateReferenceImageNative(JN
         p3d.push_back(cv::Point3f(X, Y, Z));
     }
     env->ReleaseStringUTFChars(path_, path);
+//    Mat mat = Mat(p3d, true);
+//    return mat;
     return 1;
 }
 

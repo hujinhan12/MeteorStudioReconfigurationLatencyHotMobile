@@ -14,7 +14,7 @@ print(f'Working in {sdkDir}/sdk...')
 
 makefile = open('./app/src/main/jni/Android.mk', 'r')
 
-print(f'file: {makefile}')
+print(f'file updated: {makefile.name}')
 contents = makefile.read()
 
 contents = contents.replace('{}', f'{sdkDir}/sdk')

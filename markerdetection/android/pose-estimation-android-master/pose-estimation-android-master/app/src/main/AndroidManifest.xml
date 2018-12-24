@@ -25,9 +25,10 @@
         </activity>
 
         <service
-            android:name="services.IoService"
+            android:name="service.IoService"
             android:enabled="true"
-            android:exported="true"></service>
+            android:exported="true"
+            android:process=":ioService"></service>
     </application>
 
 </manifest>

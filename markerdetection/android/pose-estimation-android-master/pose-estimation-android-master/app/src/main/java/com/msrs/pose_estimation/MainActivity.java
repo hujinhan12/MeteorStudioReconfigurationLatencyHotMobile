@@ -5,9 +5,6 @@ import android.os.Bundle;
 
 public class MainActivity extends AppCompatActivity {
 
-    // Used to load the 'native-lib' library on application startup.
-
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -19,7 +16,7 @@ public class MainActivity extends AppCompatActivity {
                     .replace(R.id.container, Camera2RawFragment.newInstance())
                     .commit();
         }
-        }
+    }
 
     /**
      * A native method that is implemented by the 'native-lib' native library,

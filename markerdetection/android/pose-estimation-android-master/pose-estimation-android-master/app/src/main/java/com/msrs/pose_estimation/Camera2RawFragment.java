@@ -18,11 +18,15 @@
 package com.msrs.pose_estimation;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
@@ -45,10 +49,11 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
+import android.os.RemoteException;
 import android.support.annotation.NonNull;
-import android.support.v13.app.FragmentCompat;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.DialogFragment;
 import android.support.v4.app.Fragment;
@@ -61,24 +66,25 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+
+import service.IIoService;
+import service.IoService;
+
+import static android.content.Context.BIND_AUTO_CREATE;
 
 //import org.opencv.android.OpenCVLoader;
 
@@ -86,10 +92,21 @@ import java.util.concurrent.TimeUnit;
 public class Camera2RawFragment extends Fragment
         implements View.OnClickListener {
 
-    /**
-     * Conversion from screen rotation to JPEG orientation.
-     */
 
+    private IIoService ioService;
+    private ServiceConnection ioServiceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            Log.d("Mainactivity", "Service connected.");
+//            IoService.IoLocalBinder ioBinder = (IoService.IoLocalBinder) service;
+            ioService = IIoService.Stub.asInterface(service);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.d("Mainactivity", "Service disconnected.");
+        }
+    };
 
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
     private static Surface mSurface;
@@ -442,6 +459,7 @@ public class Camera2RawFragment extends Fragment
     }
 
     File mReferenceImage;
+    @SuppressLint("SetTextI18n")
     @Override
     public void onViewCreated(@NonNull final View view, Bundle savedInstanceState) {
         view.findViewById(R.id.picture).setOnClickListener(this);
@@ -491,6 +509,18 @@ public class Camera2RawFragment extends Fragment
     NativeCallMethods.generateReferenceImage(mReferenceImage.getAbsolutePath());
 
 
+
+    Intent intent = new Intent(getActivity(), IoService.class);
+//        startService(intent);
+    getActivity().bindService(intent, ioServiceConnection, BIND_AUTO_CREATE);
+
+    view.findViewById(R.id.binderButton).setOnClickListener(v ->{
+        try {
+            ((Button)v).setText(Integer.toString(ioService.getPid()));
+        } catch (RemoteException e) {
+            e.printStackTrace();
+        }
+    });
 }
 
     @Override
