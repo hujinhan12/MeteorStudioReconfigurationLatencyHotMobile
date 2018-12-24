@@ -292,10 +292,12 @@ JNIEXPORT void JNICALL
 JNIEXPORT jint JNICALL
 Java_com_msrs_pose_1estimation_NativeCallMethods_generateReferenceImageNative(JNIEnv *env,
                                                                              jclass type,
-                                                                             jstring path_) {
+                                                                             jstring path_,
+                                                                             jlong matPtr) {
     const char *path = env->GetStringUTFChars(path_, 0);
 
     Mat referenceImage = imread(path);
+    Mat* matOut =(Mat*) matPtr;
 
     Ptr<FeatureDetector> detector = ORB::create(numFeautresReference,1.2f,8,31,0,2,ORB::HARRIS_SCORE,31,20);
 
@@ -318,8 +320,7 @@ Java_com_msrs_pose_1estimation_NativeCallMethods_generateReferenceImageNative(JN
         p3d.push_back(cv::Point3f(X, Y, Z));
     }
     env->ReleaseStringUTFChars(path_, path);
-//    Mat mat = Mat(p3d, true);
-//    return mat;
+    *matOut = Mat(p3d, true);
     return 1;
 }
 

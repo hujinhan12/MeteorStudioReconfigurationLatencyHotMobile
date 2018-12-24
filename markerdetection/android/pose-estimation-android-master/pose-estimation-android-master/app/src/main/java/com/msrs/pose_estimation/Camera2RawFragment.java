@@ -69,6 +69,9 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.Toast;
 
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.MatOfPoint3f;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -92,6 +95,12 @@ import static android.content.Context.BIND_AUTO_CREATE;
 public class Camera2RawFragment extends Fragment
         implements View.OnClickListener {
 
+    static {
+        if (!OpenCVLoader.initDebug()) {
+            // Handle initialization error
+        }
+        System.loadLibrary("opencvcamera");
+    }
 
     private IIoService ioService;
     private ServiceConnection ioServiceConnection = new ServiceConnection() {
@@ -506,7 +515,9 @@ public class Camera2RawFragment extends Fragment
     {
         e.printStackTrace();
     }
-    NativeCallMethods.generateReferenceImage(mReferenceImage.getAbsolutePath());
+
+    MatOfPoint3f m = new MatOfPoint3f();
+    NativeCallMethods.generateReferenceImage(mReferenceImage.getAbsolutePath(), m);
 
 
 
