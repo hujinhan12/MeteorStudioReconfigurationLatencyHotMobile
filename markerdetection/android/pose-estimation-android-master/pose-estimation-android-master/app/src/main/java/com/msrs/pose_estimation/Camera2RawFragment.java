@@ -109,6 +109,12 @@ public class Camera2RawFragment extends Fragment
             Log.d("Mainactivity", "Service connected.");
 //            IoService.IoLocalBinder ioBinder = (IoService.IoLocalBinder) service;
             ioService = IIoService.Stub.asInterface(service);
+            try {
+                refImageBytes = ioService.getReferenceImage();
+                NativeCallMethods.generateReferenceImage(refImageBytes);
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
         }
 
         @Override
@@ -316,6 +322,8 @@ public class Camera2RawFragment extends Fragment
 
     private int mState = STATE_CLOSED;
 
+    private byte[] refImageBytes;
+
     /**
      * Timer to use with pre-capture sequence to ensure a timely capture if 3A convergence is
      * taking too long.
@@ -467,7 +475,6 @@ public class Camera2RawFragment extends Fragment
         return inflater.inflate(R.layout.fragment_camera2_basic, container, false);
     }
 
-    File mReferenceImage;
     @SuppressLint("SetTextI18n")
     @Override
     public void onViewCreated(@NonNull final View view, Bundle savedInstanceState) {
@@ -492,34 +499,6 @@ public class Camera2RawFragment extends Fragment
                 }
             }
         };
-
-        //loading the reference image and extracting the feature points
-        try{
-        InputStream is = getResources().openRawResource(R.raw.stones);
-        File cascadeDir = Objects.requireNonNull(getActivity()).getDir("ref", Context.MODE_PRIVATE);
-
-        mReferenceImage = new File(cascadeDir, "referenceImage.jpg");
-        FileOutputStream os = new FileOutputStream(mReferenceImage);
-
-        byte[] buffer = new byte[4096];
-        int bytesRead;
-        while ((bytesRead = is.read(buffer)) != -1) {
-            os.write(buffer, 0, bytesRead);
-        }
-
-        is.close();
-        os.close();
-
-    }
-        catch (Exception e)
-    {
-        e.printStackTrace();
-    }
-
-    MatOfPoint3f m = new MatOfPoint3f();
-    NativeCallMethods.generateReferenceImage(mReferenceImage.getAbsolutePath(), m);
-
-
 
     Intent intent = new Intent(getActivity(), IoService.class);
 //        startService(intent);

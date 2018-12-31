@@ -33,13 +33,13 @@ public class NativeCallMethods {
         }
         poseEstimateNative(src.getWidth(), src.getHeight(), planes[0].getBuffer(),dst,false);
     }
-    public static int generateReferenceImage(String path, MatOfPoint3f mat)
+    public static int generateReferenceImage(byte[] refImage)
     {
-        return generateReferenceImageNative(path, mat.getNativeObjAddr());
+        return generateReferenceImageNative(refImage);
     }
 
     //passing the image buffer to cpp code which estimates the pose based on feature matching, find homography and pnp transform.
     public static native void poseEstimateNative(int width, int height, ByteBuffer buffer, Surface dst, boolean colorFlag);
     //passing the reference image when the application starts up to extract and store keypoints. This is called only once.
-    public static native int generateReferenceImageNative(String path, long matPtr);
+    public static native int generateReferenceImageNative(byte[] refImage);
 }

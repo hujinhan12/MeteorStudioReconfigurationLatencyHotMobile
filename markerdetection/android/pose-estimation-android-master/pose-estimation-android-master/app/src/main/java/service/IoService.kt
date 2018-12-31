@@ -1,17 +1,13 @@
 package service
 
-import android.app.PendingIntent.getActivity
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.os.Process
 import android.util.Log
-import com.msrs.pose_estimation.NativeCallMethods
 import com.msrs.pose_estimation.R
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileOutputStream
-import java.util.*
 
 
 class IoService : Service() {
@@ -34,31 +30,31 @@ class IoService : Service() {
 
         override fun getPid(): Int = Process.myPid()
 
-//        fun getReferenceImage():ByteArray{
-//
-//
-//            //load the reference image
-//            try {
-//                val `is` = resources.openRawResource(R.raw.stones)
-//                val cascadeDir = getActivity().getDir("ref", Context.MODE_PRIVATE)
-//
-//                mReferenceImage = File(cascadeDir, "referenceImage.jpg")
-//                val os = FileOutputStream(mReferenceImage)
-//
-//                val buffer = ByteArray(4096)
-//                val bytesRead: Int
-//                while ((bytesRead = `is`.read(buffer)) != -1) {
-//                    os.write(buffer, 0, bytesRead)
-//                }
-//
-//                `is`.close()
+        override fun getReferenceImage():ByteArray{
+
+            Log.d("IoService", "getReferenceImage()");
+            //load the reference image
+            try {
+                val inputStream = resources.openRawResource(R.raw.stones)
+
+                val bb = ByteArrayOutputStream()
+
+                val buffer = ByteArray(4096)
+                var bytesRead: Int = inputStream.read(buffer)
+                while(bytesRead != -1) {
+                    bb.write(buffer)
+                    bytesRead = inputStream.read(buffer)
+                }
+
+                inputStream.close()
 //                os.close()
-//
-//            } catch (e: Exception) {
-//                e.printStackTrace()
-//            }
-//
-//            val mat: MatOfPoint3f = NativeCallMethods.generateReferenceImage(mReferenceImage.absolutePath)
-//        }
+                Log.d("IoService", "getReferenceImage() finished with " + bb.size() + " bytes")
+                return bb.toByteArray()
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return ByteArray(0)
+        }
     }
 }

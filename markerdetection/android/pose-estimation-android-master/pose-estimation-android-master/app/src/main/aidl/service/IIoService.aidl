@@ -13,4 +13,6 @@ interface IIoService {
 
     /** Request the process ID of this service, to do evil things with it. */
     int getPid();
+
+    byte[] getReferenceImage();
 }

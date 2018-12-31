@@ -22,8 +22,7 @@ JNIEXPORT void JNICALL
 JNIEXPORT jint JNICALL
 Java_com_msrs_pose_1estimation_NativeCallMethods_generateReferenceImageNative(JNIEnv *env,
                                                                              jclass type,
-                                                                             jstring path_,
-                                                                             jlong matPtr);
+                                                                             jbyteArray refImage);
 
 #ifdef __cplusplus
 }

@@ -26,6 +26,9 @@ JNIEXPORT void JNICALL
                                                                           jboolean colorFlag)
 {
 
+    // Ignore pose estimation until the reference image has been analyzed.
+    if(p3d.size() == 0) return;
+    
     //acquiring the image buffer
     uint8_t *srcLumaPtr = reinterpret_cast<uint8_t *>(env->GetDirectBufferAddress(srcBuffer));
 
@@ -292,12 +295,14 @@ JNIEXPORT void JNICALL
 JNIEXPORT jint JNICALL
 Java_com_msrs_pose_1estimation_NativeCallMethods_generateReferenceImageNative(JNIEnv *env,
                                                                              jclass type,
-                                                                             jstring path_,
-                                                                             jlong matPtr) {
-    const char *path = env->GetStringUTFChars(path_, 0);
+                                                                              jbyteArray refImage) {
 
-    Mat referenceImage = imread(path);
-    Mat* matOut =(Mat*) matPtr;
+    int len = env->GetArrayLength(refImage);
+    unsigned char* buf = new unsigned char[len];
+    env->GetByteArrayRegion (refImage, 0, len, reinterpret_cast<jbyte*>(buf));
+    std::vector<char> data;
+    data.insert(data.end(), buf, buf+len);
+    Mat referenceImage = imdecode(data, 0);
 
     Ptr<FeatureDetector> detector = ORB::create(numFeautresReference,1.2f,8,31,0,2,ORB::HARRIS_SCORE,31,20);
 
@@ -319,8 +324,7 @@ Java_com_msrs_pose_1estimation_NativeCallMethods_generateReferenceImageNative(JN
         float Z = 0;
         p3d.push_back(cv::Point3f(X, Y, Z));
     }
-    env->ReleaseStringUTFChars(path_, path);
-    *matOut = Mat(p3d, true);
+
     return 1;
 }
 
