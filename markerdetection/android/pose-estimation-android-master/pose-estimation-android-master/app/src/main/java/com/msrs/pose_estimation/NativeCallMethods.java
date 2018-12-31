@@ -5,6 +5,10 @@ import android.graphics.ImageFormat;
 import android.media.Image;
 import android.view.Surface;
 
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.MatOfPoint3f;
+
 import java.nio.ByteBuffer;
 
 public class NativeCallMethods {
@@ -29,13 +33,13 @@ public class NativeCallMethods {
         }
         poseEstimateNative(src.getWidth(), src.getHeight(), planes[0].getBuffer(),dst,false);
     }
-    public static void generateReferenceImage(String path)
+    public static int generateReferenceImage(byte[] refImage)
     {
-        generateReferenceImageNative(path);
+        return generateReferenceImageNative(refImage);
     }
 
     //passing the image buffer to cpp code which estimates the pose based on feature matching, find homography and pnp transform.
     public static native void poseEstimateNative(int width, int height, ByteBuffer buffer, Surface dst, boolean colorFlag);
     //passing the reference image when the application starts up to extract and store keypoints. This is called only once.
-    public static native int generateReferenceImageNative(String path);
+    public static native int generateReferenceImageNative(byte[] refImage);
 }

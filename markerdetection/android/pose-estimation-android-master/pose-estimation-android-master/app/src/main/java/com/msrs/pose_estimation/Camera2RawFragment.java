@@ -18,13 +18,15 @@
 package com.msrs.pose_estimation;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
-import android.app.DialogFragment;
-import android.app.Fragment;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
@@ -47,10 +49,14 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.IBinder;
 import android.os.Looper;
 import android.os.Message;
-import android.support.v13.app.FragmentCompat;
+import android.os.RemoteException;
+import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
+import android.support.v4.app.DialogFragment;
+import android.support.v4.app.Fragment;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
@@ -60,34 +66,62 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.Toast;
 
-//import org.opencv.android.OpenCVLoader;
+import org.opencv.android.OpenCVLoader;
+import org.opencv.core.MatOfPoint3f;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.List;
-import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
+import service.IIoService;
+import service.IoService;
+
+import static android.content.Context.BIND_AUTO_CREATE;
+
+//import org.opencv.android.OpenCVLoader;
+
 
 public class Camera2RawFragment extends Fragment
-        implements View.OnClickListener, FragmentCompat.OnRequestPermissionsResultCallback {
+        implements View.OnClickListener {
 
-    /**
-     * Conversion from screen rotation to JPEG orientation.
-     */
+    static {
+        if (!OpenCVLoader.initDebug()) {
+            // Handle initialization error
+        }
+        System.loadLibrary("opencvcamera");
+    }
 
+    private IIoService ioService;
+    private ServiceConnection ioServiceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            Log.d("Mainactivity", "Service connected.");
+//            IoService.IoLocalBinder ioBinder = (IoService.IoLocalBinder) service;
+            ioService = IIoService.Stub.asInterface(service);
+            try {
+                refImageBytes = ioService.getReferenceImage();
+                NativeCallMethods.generateReferenceImage(refImageBytes);
+            } catch (RemoteException e) {
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            Log.d("Mainactivity", "Service disconnected.");
+        }
+    };
 
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
     private static Surface mSurface;
@@ -115,11 +149,6 @@ public class Camera2RawFragment extends Fragment
             Manifest.permission.READ_EXTERNAL_STORAGE,
             Manifest.permission.WRITE_EXTERNAL_STORAGE,
     };
-
-    /**
-     * Timeout for the pre-capture sequence.
-     */
-    private static final long PRECAPTURE_TIMEOUT_MS = 1000;
 
     /**
      * Tolerance when comparing aspect ratios.
@@ -157,11 +186,6 @@ public class Camera2RawFragment extends Fragment
     private static final int STATE_PREVIEW = 2;
 
     /**
-     * Camera state: Waiting for 3A convergence before capturing a photo.
-     */
-    private static final int STATE_WAITING_FOR_3A_CONVERGENCE = 3;
-
-    /**
      * An {@link OrientationEventListener} used to determine when device rotation has occurred.
      * This is mainly necessary for when the device is rotated by 180 degrees, in which case
      * onCreate or onConfigurationChanged is not called as the view dimensions remain the same,
@@ -178,12 +202,20 @@ public class Camera2RawFragment extends Fragment
 
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
-            configureTransform(width, height);
+            try {
+                configureTransform(width, height);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
 
         @Override
         public void onSurfaceTextureSizeChanged(SurfaceTexture texture, int width, int height) {
-            configureTransform(width, height);
+            try {
+                configureTransform(width, height);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
 
         @Override
@@ -276,11 +308,6 @@ public class Camera2RawFragment extends Fragment
      */
     private boolean mNoAFRun = false;
 
-    /**
-     * Number of pending user requests to capture a photo.
-     */
-    private int mPendingUserCaptures = 0;
-
 
     /**
      * Request ID to {@link ImageSaver.ImageSaverBuilder} mapping for in-progress RAW captures.
@@ -294,6 +321,8 @@ public class Camera2RawFragment extends Fragment
     public static File working_Dir = new File(Environment.getExternalStorageDirectory().getAbsolutePath()+"/opencv");
 
     private int mState = STATE_CLOSED;
+
+    private byte[] refImageBytes;
 
     /**
      * Timer to use with pre-capture sequence to ensure a timely capture if 3A convergence is
@@ -309,7 +338,7 @@ public class Camera2RawFragment extends Fragment
     private final CameraDevice.StateCallback mStateCallback = new CameraDevice.StateCallback() {
 
         @Override
-        public void onOpened(CameraDevice cameraDevice) {
+        public void onOpened(@NonNull CameraDevice cameraDevice) {
 
             // This method is called when the camera is opened.  We start camera preview here if
             // the TextureView displaying this has been set up.
@@ -367,8 +396,8 @@ public class Camera2RawFragment extends Fragment
             Log.d("image count",""+count);
             Image img= reader.acquireNextImage();
             long startTime = System.currentTimeMillis();
-            long stopTime = 0;
-            long totalTime = 0;
+            long stopTime;
+            long totalTime;
             try{
 
                 NativeCallMethods.poseEstimate(img,mSurface,colorFlag);
@@ -401,20 +430,23 @@ public class Camera2RawFragment extends Fragment
     private final CameraCaptureSession.CaptureCallback mCaptureCallback
             = new CameraCaptureSession.CaptureCallback() {
         @Override
-        public void onCaptureStarted(CameraCaptureSession session, CaptureRequest request,
+        public void onCaptureStarted(@NonNull CameraCaptureSession session,
+                                     @NonNull CaptureRequest request,
                                      long timestamp, long frameNumber) {
 
         }
 
         @Override
-        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request,
-                                       TotalCaptureResult result) {
+        public void onCaptureCompleted(@NonNull CameraCaptureSession session,
+                                       @NonNull CaptureRequest request,
+                                       @NonNull TotalCaptureResult result) {
 
         }
 
         @Override
-        public void onCaptureFailed(CameraCaptureSession session, CaptureRequest request,
-                                    CaptureFailure failure) {
+        public void onCaptureFailed(@NonNull CameraCaptureSession session,
+                                    @NonNull CaptureRequest request,
+                                    @NonNull CaptureFailure failure) {
             showToast("Capture failed!");
         }
 
@@ -438,17 +470,17 @@ public class Camera2RawFragment extends Fragment
     }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+    public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         return inflater.inflate(R.layout.fragment_camera2_basic, container, false);
     }
 
-    File mReferenceImage;
+    @SuppressLint("SetTextI18n")
     @Override
-    public void onViewCreated(final View view, Bundle savedInstanceState) {
+    public void onViewCreated(@NonNull final View view, Bundle savedInstanceState) {
         view.findViewById(R.id.picture).setOnClickListener(this);
 
-        mTextureView = (AutoFitTextureView) view.findViewById(R.id.texture);
+        mTextureView = view.findViewById(R.id.texture);
 
         // Setup a new OrientationEventListener.  This is used to handle rotation events like a
         // 180 degree rotation that do not normally trigger a call to onCreate to do view re-layout
@@ -458,37 +490,27 @@ public class Camera2RawFragment extends Fragment
             @Override
             public void onOrientationChanged(int orientation) {
                 if (mTextureView != null && mTextureView.isAvailable()) {
-                    configureTransform(mTextureView.getWidth(), mTextureView.getHeight());
+                    try {
+                        configureTransform(mTextureView.getWidth(), mTextureView.getHeight());
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
 //                    configureTransform(mTextureView.getWidth(), mTextureView.getHeight());
                 }
             }
         };
 
-        //loading the reference image and extracting the feature points
-        try{
-        InputStream is = getResources().openRawResource(R.raw.stones);
-        File cascadeDir = getActivity().getDir("ref", Context.MODE_PRIVATE);
+    Intent intent = new Intent(getActivity(), IoService.class);
+//        startService(intent);
+    getActivity().bindService(intent, ioServiceConnection, BIND_AUTO_CREATE);
 
-        mReferenceImage = new File(cascadeDir, "referenceImage.jpg");
-        FileOutputStream os = new FileOutputStream(mReferenceImage);
-
-        byte[] buffer = new byte[4096];
-        int bytesRead;
-        while ((bytesRead = is.read(buffer)) != -1) {
-            os.write(buffer, 0, bytesRead);
+    view.findViewById(R.id.binderButton).setOnClickListener(v ->{
+        try {
+            ((Button)v).setText(Integer.toString(ioService.getPid()));
+        } catch (RemoteException e) {
+            e.printStackTrace();
         }
-
-        is.close();
-        os.close();
-
-    }
-        catch (Exception e)
-    {
-        e.printStackTrace();
-    }
-    NativeCallMethods.generateReferenceImage(mReferenceImage.getAbsolutePath());
-
-
+    });
 }
 
     @Override
@@ -502,7 +524,11 @@ public class Camera2RawFragment extends Fragment
         // configure the preview bounds here (otherwise, we wait until the surface is ready in
         // the SurfaceTextureListener).
         if (mTextureView.isAvailable()) {
-            configureTransform(mTextureView.getWidth(), mTextureView.getHeight());
+            try {
+                configureTransform(mTextureView.getWidth(), mTextureView.getHeight());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         } else {
             mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
         }
@@ -522,7 +548,8 @@ public class Camera2RawFragment extends Fragment
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
         if (requestCode == REQUEST_CAMERA_PERMISSIONS) {
             for (int result : grantResults) {
                 if (result != PackageManager.PERMISSION_GRANTED) {
@@ -553,10 +580,11 @@ public class Camera2RawFragment extends Fragment
      */
     private boolean setUpCameraOutputs() {
         Activity activity = getActivity();
+        if(activity == null) return false;
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
         if (manager == null) {
             ErrorDialog.buildErrorDialog("This device doesn't support Camera2 API.").
-                    show(getFragmentManager(), "dialog");
+                    show(Objects.requireNonNull(getFragmentManager()), "dialog");
             return false;
         }
         try {
@@ -567,7 +595,8 @@ public class Camera2RawFragment extends Fragment
 
                 if(frontCameraActivated)
                 {
-                    if(characteristics.get(CameraCharacteristics.LENS_FACING) != CameraCharacteristics.LENS_FACING_FRONT)
+                    Integer facingDirection = characteristics.get(CameraCharacteristics.LENS_FACING);
+                    if(facingDirection != null && facingDirection != CameraCharacteristics.LENS_FACING_FRONT)
                     {
                         continue;
                     }
@@ -588,14 +617,15 @@ public class Camera2RawFragment extends Fragment
                         CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
 
                 // For still image captures, we use the largest available size.
-                Log.d("output sizes ",""+map.getOutputSizes(mImageFormat));
-                Size[] a= map.getOutputSizes(mImageFormat);
+                Size[] outputSizes = Objects.requireNonNull(map).getOutputSizes(mImageFormat);
+                Log.d("output sizes ",""+ Arrays.toString(outputSizes));
                 for(int i=0;i<map.getOutputSizes(mImageFormat).length;i++)
                 {
-                    Log.d("output sizes ",""+a[i].getWidth()+" x "+a[i].getHeight());
+                    Log.d("output sizes ",""+outputSizes[i].getWidth()+" x "+
+                            outputSizes[i].getHeight());
                 }
                 Size largestJpeg = Collections.max(
-                        Arrays.asList(new Size(2048 ,1536)),
+                        Collections.singletonList(new Size(2048, 1536)),
                         new CompareSizesByArea());
 
                 synchronized (mCameraStateLock) {
@@ -640,7 +670,7 @@ public class Camera2RawFragment extends Fragment
             return;
         }
 
-        Activity activity = getActivity();
+        Activity activity = Objects.requireNonNull(getActivity());
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
         try {
             // Wait for any previously running session to finish.
@@ -673,7 +703,7 @@ public class Camera2RawFragment extends Fragment
         if (shouldShowRationale()) {
             PermissionConfirmationDialog.newInstance().show(getChildFragmentManager(), "dialog");
         } else {
-            FragmentCompat.requestPermissions(this, CAMERA_PERMISSIONS, REQUEST_CAMERA_PERMISSIONS);
+            requestPermissions(CAMERA_PERMISSIONS, REQUEST_CAMERA_PERMISSIONS);
         }
     }
 
@@ -684,7 +714,7 @@ public class Camera2RawFragment extends Fragment
      */
     private boolean hasAllPermissionsGranted() {
         for (String permission : CAMERA_PERMISSIONS) {
-            if (ActivityCompat.checkSelfPermission(getActivity(), permission)
+            if (ActivityCompat.checkSelfPermission(Objects.requireNonNull(getActivity()), permission)
                     != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
@@ -699,7 +729,7 @@ public class Camera2RawFragment extends Fragment
      */
     private boolean shouldShowRationale() {
         for (String permission : CAMERA_PERMISSIONS) {
-            if (FragmentCompat.shouldShowRequestPermissionRationale(this, permission)) {
+            if (shouldShowRequestPermissionRationale(permission)) {
                 return true;
             }
         }
@@ -728,7 +758,6 @@ public class Camera2RawFragment extends Fragment
                 // Reset state and clean up resources used by the camera.
                 // Note: After calling this, the ImageReaders will be closed after any background
                 // tasks saving Images from these readers have been completed.
-                mPendingUserCaptures = 0;
                 mState = STATE_CLOSED;
                 if (null != mCaptureSession) {
                     mCaptureSession.close();
@@ -801,11 +830,11 @@ public class Camera2RawFragment extends Fragment
             mPreviewRequestBuilder.addTarget(mImageReader.get().getSurface());
 //
             // Here, we create a CameraCaptureSession for camera preview.
-            mCameraDevice.createCaptureSession(Arrays.asList(
+            mCameraDevice.createCaptureSession(Collections.singletonList(
                     mImageReader.get().getSurface()
                     ), new CameraCaptureSession.StateCallback() {
                         @Override
-                        public void onConfigured(CameraCaptureSession cameraCaptureSession) {
+                        public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
                             synchronized (mCameraStateLock) {
                                 // The camera is already closed
                                 if (null == mCameraDevice) {
@@ -828,7 +857,7 @@ public class Camera2RawFragment extends Fragment
                         }
 
                         @Override
-                        public void onConfigureFailed(CameraCaptureSession cameraCaptureSession) {
+                        public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
                             showToast("Failed to configure camera.");
                         }
                     }, mBackgroundHandler
@@ -857,7 +886,7 @@ public class Camera2RawFragment extends Fragment
      * @param viewWidth  The width of `mTextureView`
      * @param viewHeight The height of `mTextureView`
      */
-    private void configureTransform(int viewWidth, int viewHeight) {
+    private void configureTransform(int viewWidth, int viewHeight) throws Exception {
         Activity activity = getActivity();
         synchronized (mCameraStateLock) {
             if (null == mTextureView || null == activity) {
@@ -868,6 +897,10 @@ public class Camera2RawFragment extends Fragment
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
 
             float[] focal=mCharacteristics.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+            if(focal == null || map == null){
+                throw new Exception("failed to get LENS_INFO_AVAILABLE_FOCAL_LENGTHS" +
+                        "or SCALER_STREAM_CONFIGURATION_MAP characteristics");
+            }
 
             for(int i=0;i<focal.length;i++)
             {
@@ -924,8 +957,11 @@ public class Camera2RawFragment extends Fragment
 
             // Find rotation of device in degrees (reverse device orientation for front-facing
             // cameras).
-            int rotation = (mCharacteristics.get(CameraCharacteristics.LENS_FACING) ==
-                    CameraCharacteristics.LENS_FACING_FRONT) ?
+            Integer facingCharacteristic = mCharacteristics.get(CameraCharacteristics.LENS_FACING);
+            if(facingCharacteristic == null){
+                throw new Exception("Failed to get characteristic LENS_FACING");
+            }
+            int rotation = (facingCharacteristic == CameraCharacteristics.LENS_FACING_FRONT) ?
                     (360 + ORIENTATIONS.get(deviceRotation)) % 360 :
                     (360 - ORIENTATIONS.get(deviceRotation)) % 360;
 
@@ -1023,7 +1059,7 @@ public class Camera2RawFragment extends Fragment
     }
 
     /**
-     * A dialog fragment for displaying non-recoverable errors; this {@ling Activity} will be
+     * A dialog fragment for displaying non-recoverable errors; this {@link Activity} will be
      * finished once the dialog has been acknowledged by the user.
      */
     public static class ErrorDialog extends DialogFragment {
@@ -1041,6 +1077,7 @@ public class Camera2RawFragment extends Fragment
             return dialog;
         }
 
+        @NonNull
         @Override
         public Dialog onCreateDialog(Bundle savedInstanceState) {
             final Activity activity = getActivity();
@@ -1049,7 +1086,9 @@ public class Camera2RawFragment extends Fragment
                     .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialogInterface, int i) {
-                            activity.finish();
+                            if(activity != null) {
+                                activity.finish();
+                            }
                         }
                     })
                     .create();
@@ -1069,7 +1108,7 @@ public class Camera2RawFragment extends Fragment
          *
          * @param object an object to wrap.
          */
-        public RefCountedAutoCloseable(T object) {
+        RefCountedAutoCloseable(T object) {
             if (object == null) throw new NullPointerException();
             mObject = object;
         }
@@ -1079,7 +1118,7 @@ public class Camera2RawFragment extends Fragment
          *
          * @return the wrapped object, or null if the object has been released.
          */
-        public synchronized T getAndRetain() {
+        synchronized T getAndRetain() {
             if (mRefCount < 0) {
                 return null;
             }
@@ -1092,7 +1131,7 @@ public class Camera2RawFragment extends Fragment
          *
          * @return the wrapped object, or null if the object has been released.
          */
-        public synchronized T get() {
+        synchronized T get() {
             return mObject;
         }
 
@@ -1162,31 +1201,6 @@ public class Camera2RawFragment extends Fragment
         } else {
             Log.e(TAG, "Couldn't find any suitable preview size");
             return choices[0];
-        }
-    }
-
-    /**
-     * Generate a string containing a formatted timestamp with the current date and time.
-     *
-     * @return a {@link String} representing a time.
-     */
-    private static String generateTimestamp() {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy_MM_dd_HH_mm_ss_SSS", Locale.US);
-        return sdf.format(new Date());
-    }
-
-    /**
-     * Cleanup the given {@link OutputStream}.
-     *
-     * @param outputStream the stream to close.
-     */
-    private static void closeOutput(OutputStream outputStream) {
-        if (null != outputStream) {
-            try {
-                outputStream.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
         }
     }
 
@@ -1268,6 +1282,7 @@ public class Camera2RawFragment extends Fragment
             return new PermissionConfirmationDialog();
         }
 
+        @NonNull
         @Override
         public Dialog onCreateDialog(Bundle savedInstanceState) {
             final Fragment parent = getParentFragment();
@@ -1276,8 +1291,7 @@ public class Camera2RawFragment extends Fragment
                     .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
-                            FragmentCompat.requestPermissions(parent, CAMERA_PERMISSIONS,
-                                    REQUEST_CAMERA_PERMISSIONS);
+                            requestPermissions(CAMERA_PERMISSIONS, REQUEST_CAMERA_PERMISSIONS);
                         }
                     })
                     .setNegativeButton(android.R.string.cancel,
